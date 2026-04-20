@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile ui/main_window.py)",
+      "Bash(python build_exe.py)",
+      "Bash(python main.py)",
+      "Bash(./三切面隔离检查工具.exe)"
+    ]
+  }
+}
