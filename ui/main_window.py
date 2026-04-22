@@ -7,10 +7,10 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem, QProgressBar,
     QFileDialog, QMessageBox, QGroupBox, QFrame, QStatusBar, QHeaderView,
-    QMenu, QApplication, QComboBox, QWidget
+    QMenu, QApplication
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPoint, QRect
-from PyQt5.QtGui import QFont, QColor, QBrush, QDragEnterEvent, QDropEvent, QPainter, QPolygon
+from PyQt5.QtGui import QFont, QColor, QBrush, QDragEnterEvent, QDropEvent, QPainter, QPolygon, QCursor
 
 from ui.styles import get_stylesheet, COLORS
 from core.excel_parser import ExcelParser
@@ -21,6 +21,8 @@ from core.result_manager import ResultManager
 
 class FilterableHeaderView(QHeaderView):
     """支持下拉筛选的自定义表头"""
+
+    filter_changed = pyqtSignal()  # 筛选条件变化时发射
 
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
@@ -161,6 +163,8 @@ class FilterableHeaderView(QHeaderView):
         else:
             self.active_filters[column] = str(filter_value)
 
+        self.filter_changed.emit()
+
         # 重新应用所有筛选条件
         for row in range(self.table_widget.rowCount()):
             should_show = True
@@ -170,6 +174,56 @@ class FilterableHeaderView(QHeaderView):
                     should_show = False
                     break
             self.table_widget.setRowHidden(row, not should_show)
+
+
+class ClickableStatLabel(QLabel):
+    """可点击的统计标签，点击后筛选表格"""
+
+    clicked = pyqtSignal(str)  # 发送筛选类型
+
+    # 每种统计类型对应的颜色和筛选关键字
+    STYLES = {
+        "total":    {"color": COLORS["primary"], "border": COLORS["primary_light"]},
+        "isolated": {"color": COLORS["success"], "border": COLORS["success_light"]},
+        "not_isolated": {"color": COLORS["danger"], "border": COLORS["danger_light"]},
+        "user_access": {"color": COLORS["success"], "border": COLORS["success_light"]},
+        "error":    {"color": COLORS["warning"], "border": "#f5b041"},
+    }
+
+    def __init__(self, text, filter_type, parent=None):
+        super().__init__(text, parent)
+        self.filter_type = filter_type
+        self._active = False
+        self.setCursor(QCursor(Qt.PointingHandCursor))
+        self.setAlignment(Qt.AlignCenter)
+        self._update_style()
+
+    @property
+    def active(self):
+        return self._active
+
+    @active.setter
+    def active(self, value):
+        self._active = value
+        self._update_style()
+
+    def _update_style(self):
+        s = self.STYLES.get(self.filter_type, self.STYLES["total"])
+        border_color = s["color"] if self._active else "transparent"
+        font_weight = "bold" if self._active else "normal"
+        self.setStyleSheet(
+            f"color: {s['color']}; "
+            f"background-color: transparent; "
+            f"border: 2px solid {border_color}; "
+            f"border-radius: 6px; "
+            f"padding: 4px 12px; "
+            f"font-weight: {font_weight};"
+        )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.filter_type)
+        super().mousePressEvent(event)
 
 
 class FileUploadGroupBox(QGroupBox):
@@ -283,6 +337,18 @@ class MainWindow(QMainWindow):
     def create_file_upload_group(self):
         """创建文件上传区域"""
         group = FileUploadGroupBox("文件上传")
+        group.setObjectName("drag-drop-area")
+        group.setStyleSheet(
+            f"QGroupBox#drag-drop-area {{"
+            f"  border: 2px dashed {COLORS['primary']};"
+            f"  border-radius: 4px;"
+            f"  background-color: {COLORS['secondary_light']};"
+            f"}}"
+            f"QGroupBox#drag-drop-area:hover {{"
+            f"  background-color: {COLORS['secondary']};"
+            f"  border-color: {COLORS['primary_light']};"
+            f"}}"
+        )
         layout = QVBoxLayout(group)
 
         # 文件信息显示
@@ -418,6 +484,9 @@ class MainWindow(QMainWindow):
         self.result_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.result_table.customContextMenuRequested.connect(self.show_table_context_menu)
 
+        # 表头筛选变化时，清除统计标签筛选
+        custom_header.filter_changed.connect(self._clear_stat_filter)
+
         layout.addWidget(self.result_table)
 
         return group
@@ -426,31 +495,95 @@ class MainWindow(QMainWindow):
         """创建状态区域"""
         group = QGroupBox("状态信息")
         layout = QGridLayout(group)
-        
+
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         layout.addWidget(QLabel("进度:"), 0, 0)
-        layout.addWidget(self.progress_bar, 0, 1, 1, 3)
-        
-        # 统计信息
-        self.total_label = QLabel("总计: 0")
-        self.success_label = QLabel("已隔离: 0")
-        self.failed_label = QLabel("未隔离: 0")
-        self.error_label = QLabel("错误: 0")
-        
+        layout.addWidget(self.progress_bar, 0, 1, 1, 5)
+
+        # 统计信息（可点击筛选）
+        self.stat_labels = {}
+        self.total_label = ClickableStatLabel("总计: 0", "total")
+        self.success_label = ClickableStatLabel("已隔离: 0", "isolated")
+        self.user_access_label = ClickableStatLabel("用户访问面接口: 0", "user_access")
+        self.failed_label = ClickableStatLabel("未隔离: 0", "not_isolated")
+        self.error_label = ClickableStatLabel("错误: 0", "error")
+
+        for lbl in (self.total_label, self.success_label, self.user_access_label, self.failed_label, self.error_label):
+            lbl.clicked.connect(self._on_stat_label_clicked)
+
         layout.addWidget(QLabel("统计:"), 1, 0)
         layout.addWidget(self.total_label, 1, 1)
         layout.addWidget(self.success_label, 1, 2)
-        layout.addWidget(self.failed_label, 1, 3)
-        layout.addWidget(self.error_label, 1, 4)
-        
+        layout.addWidget(self.user_access_label, 1, 3)
+        layout.addWidget(self.failed_label, 1, 4)
+        layout.addWidget(self.error_label, 1, 5)
+
         # 当前状态
         self.current_status_label = QLabel("状态: 就绪")
-        layout.addWidget(self.current_status_label, 2, 0, 1, 5)
-        
+        layout.addWidget(self.current_status_label, 2, 0, 1, 6)
+
+        # 当前统计筛选状态
+        self._stat_filter = None
+
         return group
+
+    def _on_stat_label_clicked(self, filter_type):
+        """点击统计标签时的筛选处理"""
+        # 再次点击同一标签则取消筛选
+        if self._stat_filter == filter_type:
+            self._stat_filter = None
+        else:
+            self._stat_filter = filter_type
+
+        # 更新标签激活状态
+        for lbl in (self.total_label, self.success_label, self.failed_label, self.user_access_label, self.error_label):
+            lbl.active = (lbl.filter_type == self._stat_filter) if self._stat_filter else False
+
+        # 清除表头筛选器的筛选（避免与统计筛选冲突）
+        header = self.result_table.horizontalHeader()
+        if isinstance(header, FilterableHeaderView):
+            header.active_filters.clear()
+
+        self._apply_stat_filter()
+
+    def _apply_stat_filter(self):
+        """根据统计筛选状态过滤表格行"""
+        if self._stat_filter is None:
+            # 显示全部
+            for row in range(self.result_table.rowCount()):
+                self.result_table.setRowHidden(row, False)
+            return
+
+        for row in range(self.result_table.rowCount()):
+            result_item = self.result_table.item(row, 4)  # 检查结果列
+            if not result_item:
+                self.result_table.setRowHidden(row, True)
+                continue
+
+            text = result_item.text()
+            aspect_item = self.result_table.item(row, 1)  # 切面分类列
+            is_user_access = aspect_item and "用户访问面" in aspect_item.text()
+            if self._stat_filter == "isolated":
+                show = "已隔离" in text and not is_user_access
+            elif self._stat_filter == "not_isolated":
+                show = "未隔离" in text
+            elif self._stat_filter == "user_access":
+                show = is_user_access
+            elif self._stat_filter == "error":
+                show = not is_user_access and "已隔离" not in text and "未隔离" not in text
+            else:  # "total"
+                show = True
+
+            self.result_table.setRowHidden(row, not show)
+
+    def _clear_stat_filter(self):
+        """清除统计标签筛选（由表头筛选触发）"""
+        self._stat_filter = None
+        for lbl in (self.total_label, self.success_label, self.failed_label, self.user_access_label, self.error_label):
+            lbl.active = False
 
     def select_file(self):
         """选择文件"""
@@ -514,13 +647,18 @@ class MainWindow(QMainWindow):
     def clear_result_table(self):
         """清空结果表格"""
         self.result_table.setRowCount(0)
-        self.update_statistics(0, 0, 0, 0)
+        self.update_statistics(0, 0, 0, 0, 0)
+        # 重置统计筛选
+        self._stat_filter = None
+        for lbl in (self.total_label, self.success_label, self.failed_label, self.user_access_label, self.error_label):
+            lbl.active = False
         
-    def update_statistics(self, total, success, failed, error):
+    def update_statistics(self, total, success, failed, user_access, error):
         """更新统计信息"""
         self.total_label.setText(f"总计: {total}")
         self.success_label.setText(f"已隔离: {success}")
         self.failed_label.setText(f"未隔离: {failed}")
+        self.user_access_label.setText(f"用户访问面接口: {user_access}")
         self.error_label.setText(f"错误: {error}")
         
     def start_check(self):
@@ -571,12 +709,14 @@ class MainWindow(QMainWindow):
         self.start_check_btn.setEnabled(True)
         self.stop_check_btn.setEnabled(False)
         self.export_result_btn.setEnabled(True)
-        
-        self.current_status_label.setText("状态: 检查完成")
-        self.status_bar.showMessage("检查完成")
-        
-        # 更新进度条
-        self.progress_bar.setValue(100)
+
+        if self.check_thread and not self.check_thread._is_running:
+            self.current_status_label.setText("状态: 主动停止检查")
+            self.status_bar.showMessage("主动停止检查")
+        else:
+            self.current_status_label.setText("状态: 检查完成")
+            self.status_bar.showMessage("检查完成")
+            self.progress_bar.setValue(100)
         
     def on_check_error(self, error_msg):
         """检查错误"""
@@ -618,7 +758,7 @@ class MainWindow(QMainWindow):
             font = QFont()
             font.setBold(True)
             result_item.setFont(font)
-        elif "已隔离" in result:
+        elif "已隔离" in result or "用户访问面" in result:
             result_item.setForeground(QBrush(QColor(COLORS["success"])))
             font = QFont()
             font.setBold(True)
@@ -656,6 +796,20 @@ class MainWindow(QMainWindow):
                     should_show = False
                     break
             self.result_table.setRowHidden(row, not should_show)
+        elif self._stat_filter:
+            # 统计标签筛选
+            is_user_access = "用户访问面" in aspect
+            if self._stat_filter == "isolated":
+                show = "已隔离" in result and not is_user_access
+            elif self._stat_filter == "not_isolated":
+                show = "未隔离" in result
+            elif self._stat_filter == "user_access":
+                show = is_user_access
+            elif self._stat_filter == "error":
+                show = not is_user_access and "已隔离" not in result and "未隔离" not in result
+            else:
+                show = True
+            self.result_table.setRowHidden(row, not show)
 
         # 恢复排序
         self.result_table.setSortingEnabled(sorting_enabled)
@@ -701,7 +855,7 @@ class CheckThread(QThread):
     
     progress_updated = pyqtSignal(int, int)  # 当前进度, 总数
     result_ready = pyqtSignal(list)  # 结果行数据
-    statistics_updated = pyqtSignal(int, int, int, int)  # 总计, 成功, 失败, 错误
+    statistics_updated = pyqtSignal(int, int, int, int, int)  # 总计, 已隔离, 未隔离, 用户访问面, 错误
     error_occurred = pyqtSignal(str)  # 错误信息
     
     def __init__(self, file_path, excel_parser, http_checker, isolation_checker):
@@ -724,6 +878,7 @@ class CheckThread(QThread):
             total = len(data)
             success_count = 0
             failed_count = 0
+            user_access_count = 0
             error_count = 0
             
             # 检查每个API
@@ -762,7 +917,9 @@ class CheckThread(QThread):
                         detail = f"状态码: {status_code_display}\n响应时间: {response.get('response_time', 'N/A')}ms"
                         
                         # 统计
-                        if "已隔离" in result:
+                        if "用户访问面" in aspect:
+                            user_access_count += 1
+                        elif "已隔离" in result:
                             success_count += 1
                         elif "未隔离" in result:
                             failed_count += 1
@@ -802,7 +959,7 @@ class CheckThread(QThread):
                     
                 # 更新进度
                 self.progress_updated.emit(i + 1, total)
-                self.statistics_updated.emit(i + 1, success_count, failed_count, error_count)
+                self.statistics_updated.emit(i + 1, success_count, failed_count, user_access_count, error_count)
                 
         except Exception as e:
             self.error_occurred.emit(f"检查过程中发生错误: {str(e)}")

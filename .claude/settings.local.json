@@ -4,7 +4,16 @@
       "Bash(python -m py_compile ui/main_window.py)",
       "Bash(python build_exe.py)",
       "Bash(python main.py)",
-      "Bash(./三切面隔离检查工具.exe)"
+      "Bash(./三切面隔离检查工具.exe)",
+      "Bash(python -c ' *)",
+      "Bash(rm -rf build __pycache__ core/__pycache__ ui/__pycache__)",
+      "Bash(rm -rf dist)",
+      "Bash(rm -rf build __pycache__ core/__pycache__ ui/__pycache__ utils/__pycache__)",
+      "Bash(python -m PyInstaller --clean --onefile --windowed --name \"三切面隔离检查工具\" main.py)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from main import main; print\\('Import OK'\\)\")"
+    ],
+    "additionalDirectories": [
+      "d:\\CodingProjects\\Tools\\api_aspects_isolation_checker"
     ]
   }
 }

@@ -261,13 +261,13 @@ def get_stylesheet():
     }}
     
     /* 文件拖拽区域 */
-    QWidget.drag-drop-area {{
+    QGroupBox#drag-drop-area {{
         border: 2px dashed {COLORS['primary']};
         border-radius: {SIZES['border_radius']}px;
         background-color: {COLORS['secondary_light']};
     }}
-    
-    QWidget.drag-drop-area:hover {{
+
+    QGroupBox#drag-drop-area:hover {{
         background-color: {COLORS['secondary']};
         border-color: {COLORS['primary_light']};
     }}
