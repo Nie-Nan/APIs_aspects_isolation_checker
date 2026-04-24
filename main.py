@@ -34,7 +34,6 @@ def main():
         print("程序启动时发生错误:")
         traceback.print_exc()
         input("按Enter键退出...")
-        return 1
 
 if __name__ == "__main__":
     main()

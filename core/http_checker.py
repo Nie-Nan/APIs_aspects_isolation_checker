@@ -5,7 +5,7 @@ HTTP检查器
 import requests
 import time
 import urllib3
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 
 # 禁用SSL警告（因verify=False会产生InsecureRequestWarning）
@@ -106,15 +106,6 @@ class HttpChecker:
             "headers": dict(response.headers),
             "error": None
         }
-
-        try:
-            content_type = response.headers.get("Content-Type", "")
-            if "application/json" in content_type:
-                result["response_data"] = response.json()
-            elif "text/" in content_type:
-                result["response_text"] = response.text[:500]
-        except:
-            pass
 
         return result
 

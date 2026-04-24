@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import py_compile; [py_compile.compile\\(f, doraise=True\\) for f in ['main.py', 'core/excel_parser.py', 'core/http_checker.py', 'core/isolation_checker.py', 'core/result_manager.py', 'ui/styles.py', 'ui/main_window.py']]\")",
+      "Bash(python -c ' *)"
+    ],
+    "additionalDirectories": [
+      "d:\\CodingProjects\\Tools\\apis_aspects_isolation_checker\\core\\__pycache__"
+    ]
+  }
+}

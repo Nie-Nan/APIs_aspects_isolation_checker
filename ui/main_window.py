@@ -185,7 +185,7 @@ class ClickableStatLabel(QLabel):
     STYLES = {
         "total":    {"color": COLORS["primary"], "border": COLORS["primary_light"]},
         "isolated": {"color": COLORS["success"], "border": COLORS["success_light"]},
-        "not_isolated": {"color": COLORS["danger"], "border": COLORS["danger_light"]},
+        "not_isolated": {"color": COLORS["danger"], "border": COLORS["danger"]},
         "user_access": {"color": COLORS["success"], "border": COLORS["success_light"]},
         "error":    {"color": COLORS["warning"], "border": "#f5b041"},
     }
@@ -212,7 +212,7 @@ class ClickableStatLabel(QLabel):
         border_color = s["color"] if self._active else "transparent"
         font_weight = "bold" if self._active else "normal"
         self.setStyleSheet(
-            f"color: {s['color']}; "
+            f"color: {COLORS['primary']}; "
             f"background-color: transparent; "
             f"border: 2px solid {border_color}; "
             f"border-radius: 6px; "
@@ -226,12 +226,13 @@ class ClickableStatLabel(QLabel):
         super().mousePressEvent(event)
 
 
-class FileUploadGroupBox(QGroupBox):
-    """支持拖拽的文件上传区域"""
+class DropArea(QFrame):
+    """支持拖拽的投放区域"""
 
-    def __init__(self, title, parent=None):
-        super().__init__(title, parent)
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setFrameStyle(QFrame.StyledPanel)
         self.drag_callback = None
         self.drag_enter_callback = None
 
@@ -336,19 +337,8 @@ class MainWindow(QMainWindow):
         
     def create_file_upload_group(self):
         """创建文件上传区域"""
-        group = FileUploadGroupBox("文件上传")
-        group.setObjectName("drag-drop-area")
-        group.setStyleSheet(
-            f"QGroupBox#drag-drop-area {{"
-            f"  border: 2px dashed {COLORS['primary']};"
-            f"  border-radius: 4px;"
-            f"  background-color: {COLORS['secondary_light']};"
-            f"}}"
-            f"QGroupBox#drag-drop-area:hover {{"
-            f"  background-color: {COLORS['secondary']};"
-            f"  border-color: {COLORS['primary_light']};"
-            f"}}"
-        )
+        group = QGroupBox("文件上传")
+        group.setMinimumHeight(200)
         layout = QVBoxLayout(group)
 
         # 文件信息显示
@@ -357,25 +347,45 @@ class MainWindow(QMainWindow):
         self.file_info_label.setWordWrap(True)
         layout.addWidget(self.file_info_label)
 
-        # 按钮布局
-        button_layout = QHBoxLayout()
+        # 文件选择和拖拽区域（左右分布）
+        file_action_layout = QHBoxLayout()
+        file_action_layout.setSpacing(16)
 
         # 选择文件按钮
         self.select_file_btn = QPushButton("选择Excel文件")
         self.select_file_btn.clicked.connect(self.select_file)
-        button_layout.addWidget(self.select_file_btn)
+        self.select_file_btn.setFixedSize(150, 100)
+        file_action_layout.addWidget(self.select_file_btn)
 
-        # 拖拽区域提示
+        # 拖拽区域（缩小范围，带虚线框）
+        self.drop_area = DropArea()
+        self.drop_area.setObjectName("drag-drop-area")
+        self.drop_area.setStyleSheet(
+            f"QFrame#drag-drop-area {{"
+            f"  border: 2px dashed {COLORS['primary']};"
+            f"  border-radius: 4px;"
+            f"  background-color: {COLORS['secondary_light']};"
+            f"}}"
+            f"QFrame#drag-drop-area:hover {{"
+            f"  background-color: {COLORS['secondary']};"
+            f"  border-color: {COLORS['primary_light']};"
+            f"}}"
+        )
+        self.drop_area.setFixedHeight(100)
+
+        drop_layout = QVBoxLayout(self.drop_area)
+        drop_layout.setContentsMargins(16, 8, 16, 8)
+        drop_layout.setSpacing(0)
         drag_label = QLabel("或拖拽文件到此区域")
         drag_label.setAlignment(Qt.AlignCenter)
         drag_label.setStyleSheet(f"color: {COLORS['gray']}; font-style: italic;")
-        button_layout.addWidget(drag_label)
+        drop_layout.addWidget(drag_label)
 
-        layout.addLayout(button_layout)
+        self.drop_area.set_drag_enter_callback(self._on_drag_enter)
+        self.drop_area.set_drop_callback(self._on_drop)
 
-        # 设置拖拽回调
-        group.set_drag_enter_callback(self._on_drag_enter)
-        group.set_drop_callback(self._on_drop)
+        file_action_layout.addWidget(self.drop_area)
+        layout.addLayout(file_action_layout)
 
         return group
 
@@ -504,12 +514,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress_bar, 0, 1, 1, 5)
 
         # 统计信息（可点击筛选）
-        self.stat_labels = {}
         self.total_label = ClickableStatLabel("总计: 0", "total")
         self.success_label = ClickableStatLabel("已隔离: 0", "isolated")
         self.user_access_label = ClickableStatLabel("用户访问面接口: 0", "user_access")
         self.failed_label = ClickableStatLabel("未隔离: 0", "not_isolated")
-        self.error_label = ClickableStatLabel("错误: 0", "error")
+        self.error_label = ClickableStatLabel("异常: 0", "error")
 
         for lbl in (self.total_label, self.success_label, self.user_access_label, self.failed_label, self.error_label):
             lbl.clicked.connect(self._on_stat_label_clicked)
@@ -659,7 +668,7 @@ class MainWindow(QMainWindow):
         self.success_label.setText(f"已隔离: {success}")
         self.failed_label.setText(f"未隔离: {failed}")
         self.user_access_label.setText(f"用户访问面接口: {user_access}")
-        self.error_label.setText(f"错误: {error}")
+        self.error_label.setText(f"异常: {error}")
         
     def start_check(self):
         """开始检查"""
@@ -910,8 +919,7 @@ class CheckThread(QThread):
                         # 判断隔离状态
                         result = self.isolation_checker.check(
                             aspect=aspect,
-                            status_code=response.get("status_code"),
-                            response_time=response.get("response_time")
+                            status_code=response.get("status_code")
                         )
                         status_code_display = response.get("status_code") if response.get("status_code") is not None else "N/A"
                         detail = f"状态码: {status_code_display}\n响应时间: {response.get('response_time', 'N/A')}ms"

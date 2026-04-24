@@ -10,7 +10,10 @@
       "Bash(rm -rf dist)",
       "Bash(rm -rf build __pycache__ core/__pycache__ ui/__pycache__ utils/__pycache__)",
       "Bash(python -m PyInstaller --clean --onefile --windowed --name \"三切面隔离检查工具\" main.py)",
-      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from main import main; print\\('Import OK'\\)\")"
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from main import main; print\\('Import OK'\\)\")",
+      "Bash(pyinstaller --version)",
+      "Bash(pyinstaller \"三切面隔离检查工具.spec\" --clean)",
+      "Bash(python -c \"import PyInstaller; print\\(PyInstaller.__version__\\)\")"
     ],
     "additionalDirectories": [
       "d:\\CodingProjects\\Tools\\api_aspects_isolation_checker"

@@ -30,10 +30,7 @@ class ExcelParser:
             for _, row in df.iterrows():
                 records = self._process_record(row)
                 if records:
-                    if isinstance(records, list):
-                        self.data.extend(records)
-                    else:
-                        self.data.append(records)
+                    self.data.extend(records)
 
             return self.data
 
@@ -67,7 +64,6 @@ class ExcelParser:
                     "域名": domain,
                     "API": api,
                     "请求方式": method,
-                    "原始域名": domain_str
                 }
                 records.append(record)
 

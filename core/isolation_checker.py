@@ -15,8 +15,7 @@ class IsolationChecker:
             "用户访问面": 403
         }
 
-    def check(self, aspect: str, status_code: Optional[int],
-              response_time: Optional[float] = None) -> str:
+    def check(self, aspect: str, status_code: Optional[int]) -> str:
         if not aspect:
             return "错误: 切面分类为空"
 
